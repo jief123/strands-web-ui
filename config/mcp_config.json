@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "amzn-mcp": {
+      "command": "amzn-mcp",
+      "args": [],
+      "env": {}
+    },
+    "mcp-playwright": {
+      "command": "npx",
+      "args": [
+        "-y", "@playwright/mcp@latest"
+      ]
+    },
+    "cost-expert": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/fanjie/mcpworkshop/cost-expert/ai3_cost_expert",
+        "run",
+        "server.py"
+      ],
+      "env": {
+        "SHELL": "/usr/bin/zsh"
+      },
+      "autoApprove": [],
+      "disabled": false
+    }
+  }
+}

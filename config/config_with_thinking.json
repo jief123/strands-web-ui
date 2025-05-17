@@ -1,0 +1,23 @@
+{
+    "model": {
+        "provider": "bedrock",
+        "model_id": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "region": "us-east-1",
+        "max_tokens": 24000
+    },
+    "agent": {
+        "system_prompt": "You are a helpful assistant that provides concise, accurate information.",
+        "max_parallel_tools": 4,
+        "record_direct_tool_call": true,
+        "hot_reload_tools": true,
+        "enable_native_thinking": true,
+        "thinking_budget": 16000
+    },
+    "conversation": {
+        "window_size": 20,
+        "summarize_overflow": true
+    },
+    "ui": {
+        "update_interval": 0.1
+    }
+}
