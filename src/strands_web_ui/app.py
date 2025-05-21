@@ -16,7 +16,7 @@ import streamlit as st
 from strands import Agent, tool
 from strands.models import BedrockModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-
+from botocore.config import Config
 from strands_web_ui.mcp_server_manager import MCPServerManager
 from strands_web_ui.handlers.streamlit_handler import StreamlitHandler
 from strands_web_ui.utils.config_loader import load_config, load_mcp_config
@@ -66,7 +66,6 @@ def initialize_agent(config, mcp_manager=None):
         thinking_budget = agent_config.get("thinking_budget", 16000)
         # Get max_tokens from model config or use default (1.5x thinking budget)
         max_tokens = model_config.get("max_tokens", int(thinking_budget * 1.5))
-        
         additional_request_fields = {
             "max_tokens": max_tokens,
             "thinking": {
@@ -74,10 +73,17 @@ def initialize_agent(config, mcp_manager=None):
                 "budget_tokens": thinking_budget
             }
         }
-    
     model = BedrockModel(
         model_id=model_config.get("model_id", "us.anthropic.claude-3-7-sonnet-20250219-v1:0"),
         region=model_config.get("region", "us-east-1"),
+        boto_client_config=Config(
+                    retries={
+                        "max_attempts": 3,
+                        "mode": "standard",
+                    },
+                    read_timeout=600,
+                    connect_timeout=30,
+                ),
         additional_request_fields=additional_request_fields
     )
     
