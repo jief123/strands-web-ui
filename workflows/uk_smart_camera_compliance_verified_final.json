@@ -1,0 +1,78 @@
+{
+  "workflow_id": "uk_smart_camera_compliance_verified_final",
+  "created_at": "2025-05-22T07:17:12.969908+00:00",
+  "status": "created",
+  "tasks": [
+    {
+      "description": "RoHS Compliance Requirements",
+      "resources": [
+        "https://www.gov.uk/guidance/rohs-compliance-and-guidance"
+      ],
+      "task_id": "1",
+      "system_prompt": "Research hazardous substances restrictions and compliance requirements for electronic surveillance equipment",
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "description": "UKCA Marking & Technical Documentation",
+      "resources": [
+        "https://www.gov.uk/guidance/ukca-marking-conformity-assessment-and-documentation"
+      ],
+      "task_id": "2",
+      "system_prompt": "Analyze UKCA marking and technical documentation requirements for electronic devices",
+      "priority": 1,
+      "dependencies": [
+        "1"
+      ]
+    },
+    {
+      "description": "Radio Equipment Standards",
+      "resources": [
+        "https://www.gov.uk/government/publications/designated-standards-radio-equipment"
+      ],
+      "task_id": "3",
+      "system_prompt": "Verify applicable radio equipment standards for wireless cameras (latest standards as of Feb 2024)",
+      "priority": 2,
+      "dependencies": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "description": "Video Surveillance & Data Protection",
+      "resources": [
+        "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/cctv-and-video-surveillance/guidance-on-video-surveillance-including-cctv/"
+      ],
+      "task_id": "4",
+      "system_prompt": "Research UK GDPR and data protection requirements specific to video surveillance systems",
+      "priority": 1,
+      "dependencies": [
+        "1"
+      ]
+    }
+  ],
+  "current_task_index": 0,
+  "task_results": {
+    "1": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "2": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "3": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "4": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    }
+  },
+  "parallel_execution": true
+}

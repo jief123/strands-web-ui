@@ -1,0 +1,161 @@
+{
+  "workflow_id": "uk_smart_camera_compliance_verified",
+  "created_at": "2025-05-22T07:03:34.260928+00:00",
+  "status": "created",
+  "tasks": [
+    {
+      "task_id": "1",
+      "description": "RoHS Compliance Requirements",
+      "resources": [
+        "https://www.gov.uk/guidance/rohs-compliance-and-guidance"
+      ],
+      "system_prompt": "Research hazardous substances restrictions and compliance requirements for electronic surveillance equipment",
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "task_id": "2",
+      "description": "UKCA Marking & Conformity Assessment",
+      "resources": [
+        "https://www.gov.uk/guidance/ukca-marking-roles-and-responsibilities",
+        "https://www.gov.uk/guidance/using-the-ukca-marking"
+      ],
+      "system_prompt": "Analyze UKCA marking requirements and conformity assessment procedures for electronic devices",
+      "priority": 1,
+      "dependencies": [
+        "1"
+      ]
+    },
+    {
+      "task_id": "3",
+      "description": "Radio Equipment Regulations",
+      "resources": [
+        "https://www.gov.uk/guidance/radio-equipment-regulations-2017",
+        "https://www.gov.uk/government/publications/designated-standards-radio-equipment"
+      ],
+      "system_prompt": "Research radio equipment regulations applicable to wireless cameras",
+      "priority": 2,
+      "dependencies": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "task_id": "4",
+      "description": "Technical Documentation Requirements",
+      "resources": [
+        "https://www.gov.uk/guidance/ukca-marking-conformity-assessment-and-documentation"
+      ],
+      "system_prompt": "Compile required technical documentation and conformity assessment procedures",
+      "priority": 2,
+      "dependencies": [
+        "1",
+        "2",
+        "3"
+      ]
+    },
+    {
+      "task_id": "5",
+      "description": "Data Protection Compliance",
+      "resources": [
+        "https://ico.org.uk/for-organisations/guide-to-data-protection/",
+        "https://www.gov.uk/data-protection"
+      ],
+      "system_prompt": "Research UK GDPR and data protection requirements for surveillance cameras",
+      "priority": 1,
+      "dependencies": [
+        "1"
+      ]
+    },
+    {
+      "task_id": "6",
+      "description": "Import Procedures & Requirements",
+      "resources": [
+        "https://www.gov.uk/guidance/placing-manufactured-goods-on-the-market-in-great-britain"
+      ],
+      "system_prompt": "Analyze import requirements and procedures for electronic products from China",
+      "priority": 3,
+      "dependencies": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ]
+    },
+    {
+      "task_id": "7",
+      "description": "Surveillance Camera Requirements",
+      "resources": [
+        "https://www.gov.uk/government/publications/surveillance-camera-code-of-practice"
+      ],
+      "system_prompt": "Research specific requirements and code of practice for surveillance cameras",
+      "priority": 2,
+      "dependencies": [
+        "1",
+        "5"
+      ]
+    },
+    {
+      "task_id": "8",
+      "description": "Ongoing Compliance Monitoring",
+      "resources": [
+        "https://www.gov.uk/guidance/product-safety-for-manufacturers"
+      ],
+      "system_prompt": "Develop plan for monitoring and maintaining compliance with all applicable regulations",
+      "priority": 4,
+      "dependencies": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7"
+      ]
+    }
+  ],
+  "current_task_index": 0,
+  "task_results": {
+    "1": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "2": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "3": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "4": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "5": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "6": {
+      "status": "pending",
+      "result": null,
+      "priority": 3
+    },
+    "7": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "8": {
+      "status": "pending",
+      "result": null,
+      "priority": 4
+    }
+  },
+  "parallel_execution": true
+}

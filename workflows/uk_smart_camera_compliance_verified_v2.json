@@ -1,0 +1,76 @@
+{
+  "workflow_id": "uk_smart_camera_compliance_verified_v2",
+  "created_at": "2025-05-22T07:09:58.101899+00:00",
+  "status": "created",
+  "tasks": [
+    {
+      "description": "RoHS Compliance Requirements",
+      "resources": [
+        "https://www.gov.uk/guidance/rohs-compliance-and-guidance"
+      ],
+      "task_id": "1",
+      "system_prompt": "Research hazardous substances restrictions and compliance requirements for electronic surveillance equipment",
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "description": "UKCA Marking Requirements",
+      "resources": [
+        "https://www.gov.uk/guidance/ukca-marking-roles-and-responsibilities"
+      ],
+      "task_id": "2",
+      "system_prompt": "Analyze UKCA marking requirements for electronic surveillance equipment",
+      "priority": 1,
+      "dependencies": [
+        "1"
+      ]
+    },
+    {
+      "description": "Radio Equipment Standards",
+      "resources": [
+        "https://www.gov.uk/government/publications/designated-standards-radio-equipment"
+      ],
+      "task_id": "3",
+      "system_prompt": "Verify applicable radio equipment standards for wireless cameras",
+      "priority": 2,
+      "dependencies": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "description": "Surveillance Camera Requirements",
+      "resources": [
+        "https://www.gov.uk/government/publications/update-to-surveillance-camera-code"
+      ],
+      "task_id": "4",
+      "system_prompt": "Research latest surveillance camera code requirements and guidance",
+      "priority": 1,
+      "dependencies": []
+    }
+  ],
+  "current_task_index": 0,
+  "task_results": {
+    "1": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "2": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "3": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "4": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    }
+  },
+  "parallel_execution": true
+}

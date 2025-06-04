@@ -2,7 +2,7 @@
     "model": {
         "provider": "bedrock",
         "model_id": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        "region": "us-east-1",
+        "region": "us-west-2",
         "max_tokens": 24000
     },
     "agent": {
@@ -12,6 +12,28 @@
         "hot_reload_tools": true,
         "enable_native_thinking": true,
         "thinking_budget": 16000
+    },
+    "tools": {
+        "enabled": [
+            "calculator",
+            "editor",
+            "environment",
+            "file_read",
+            "file_write",
+            "http_request",
+            "python_repl",
+            "shell",
+            "think",
+            "workflow"
+        ],
+        "options": {
+            "python_repl": {
+                "timeout": 10
+            },
+            "http_request": {
+                "max_retries": 3
+            }
+        }
     },
     "conversation": {
         "window_size": 20,

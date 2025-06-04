@@ -1,0 +1,108 @@
+{
+  "workflow_id": "smart_camera_uk_compliance_v2",
+  "created_at": "2025-05-22T06:55:12.355988+00:00",
+  "status": "created",
+  "tasks": [
+    {
+      "task_id": "task1",
+      "description": "Technical Compliance Assessment",
+      "priority": 1,
+      "dependencies": [],
+      "subtasks": [
+        "Complete UKCA marking assessment",
+        "Verify compliance with UK Radio Equipment Regulations",
+        "Conduct EMC testing and certification",
+        "Verify RoHS compliance",
+        "Prepare technical documentation"
+      ]
+    },
+    {
+      "task_id": "task2",
+      "description": "Data Protection and Privacy Compliance",
+      "priority": 1,
+      "dependencies": [],
+      "subtasks": [
+        "Conduct Data Protection Impact Assessment (DPIA)",
+        "Develop privacy notices and consent mechanisms",
+        "Implement security measures for data protection",
+        "Register with ICO if required",
+        "Create surveillance notification templates"
+      ]
+    },
+    {
+      "task_id": "task3",
+      "description": "Import and Distribution Requirements",
+      "priority": 2,
+      "dependencies": [
+        "task1"
+      ],
+      "subtasks": [
+        "Obtain EORI number",
+        "Register as EEE producer",
+        "Join Producer Compliance Scheme if applicable",
+        "Prepare import documentation",
+        "Set up record keeping system"
+      ]
+    },
+    {
+      "task_id": "task4",
+      "description": "Consumer Protection and Documentation",
+      "priority": 2,
+      "dependencies": [
+        "task2"
+      ],
+      "subtasks": [
+        "Create product instructions in English",
+        "Prepare warranty documentation",
+        "Develop safety warnings and guidelines",
+        "Establish after-sales service procedures",
+        "Create returns policy"
+      ]
+    },
+    {
+      "task_id": "task5",
+      "description": "Compliance Monitoring System",
+      "priority": 3,
+      "dependencies": [
+        "task3",
+        "task4"
+      ],
+      "subtasks": [
+        "Establish compliance monitoring procedures",
+        "Create regulatory update tracking system",
+        "Set up incident reporting procedures",
+        "Develop audit schedule",
+        "Create compliance documentation archive"
+      ]
+    }
+  ],
+  "current_task_index": 0,
+  "task_results": {
+    "task1": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "task2": {
+      "status": "pending",
+      "result": null,
+      "priority": 1
+    },
+    "task3": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "task4": {
+      "status": "pending",
+      "result": null,
+      "priority": 2
+    },
+    "task5": {
+      "status": "pending",
+      "result": null,
+      "priority": 3
+    }
+  },
+  "parallel_execution": true
+}

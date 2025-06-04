@@ -20,6 +20,7 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_web_ui.mcp_server_manager import MCPServerManager
 from strands_web_ui.handlers.streamlit_handler import StreamlitHandler
 from strands_web_ui.utils.config_loader import load_config, load_mcp_config
+from strands_web_ui.utils.tool_loader import load_tools_from_config, get_available_tool_names
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -81,8 +82,46 @@ def initialize_agent(config, mcp_manager=None):
         additional_request_fields=additional_request_fields
     )
     
+    # Import pre-built tools directly
+    from strands_tools import (
+        calculator,
+        editor,
+        environment,
+        file_read,
+        file_write,
+        http_request,
+        python_repl,
+        shell,
+        think,
+        workflow  # Add workflow tool here
+    )
+    
+    # Create a list of tools based on configuration
+    tools_config = config.get("tools", {})
+    enabled_tool_names = tools_config.get("enabled", [])
+    
+    # Map tool names to actual tool objects
+    tool_map = {
+        "calculator": calculator,
+        "editor": editor,
+        "environment": environment,
+        "file_read": file_read,
+        "file_write": file_write,
+        "http_request": http_request,
+        "python_repl": python_repl,
+        "shell": shell,
+        "think": think,
+        "workflow": workflow  # Add workflow to the map
+    }
+    
+    # Select tools based on configuration
+    tools = [search_knowledge_base]  # Start with our custom tool
+    for tool_name in enabled_tool_names:
+        if tool_name in tool_map:
+            tools.append(tool_map[tool_name])
+            logger.info(f"Added tool: {tool_name}")
+    
     # Get tools from MCP servers if available
-    tools = [search_knowledge_base]
     if mcp_manager:
         mcp_tools = mcp_manager.get_all_tools()
         tools.extend(mcp_tools)
@@ -207,6 +246,7 @@ def main():
             "Model",
             options=[
                 "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                 "anthropic.claude-3-sonnet-20240229-v1:0",
                 "anthropic.claude-3-haiku-20240307-v1:0"
             ],
@@ -229,6 +269,26 @@ def main():
             help="Maximum number of messages to keep in conversation history"
         )
         
+        # Tool configuration section
+        st.header("Tool Configuration")
+        
+        # Get all available tool names
+        available_tool_names = get_available_tool_names()
+        
+        # Get currently enabled tools
+        enabled_tools = config.get("tools", {}).get("enabled", [])
+        
+        # Filter enabled tools to only include available ones
+        valid_enabled_tools = [tool for tool in enabled_tools if tool in available_tool_names]
+        
+        # Create multiselect for tool selection
+        selected_tools = st.multiselect(
+            "Enabled Tools",
+            options=available_tool_names,
+            default=valid_enabled_tools,  # Use only valid tools as default
+            help="Select the tools you want to enable"
+        )
+        
         if st.button("Apply Configuration"):
             # Update config
             config["model"]["region"] = region
@@ -236,6 +296,11 @@ def main():
             config["agent"]["system_prompt"] = system_prompt
             config["agent"]["enable_native_thinking"] = enable_native_thinking
             config["conversation"]["window_size"] = window_size
+            
+            # Update tools configuration
+            if "tools" not in config:
+                config["tools"] = {}
+            config["tools"]["enabled"] = selected_tools
             
             # Update session state
             st.session_state.config = config
@@ -301,6 +366,29 @@ def main():
                 st.success("MCP configuration reloaded")
             else:
                 st.error("Failed to reload MCP configuration")
+        
+        # Display active tools
+        st.header("Active Tools")
+        
+        # Get SDK tools from config
+        sdk_tools = config.get("tools", {}).get("enabled", [])
+        if sdk_tools:
+            st.subheader("SDK Tools")
+            for tool_name in sdk_tools:
+                st.write(f"- {tool_name}")
+        
+        # Get MCP tools
+        mcp_tools = []
+        for server_id in server_ids:
+            status = mcp_manager.get_server_status(server_id)
+            if status.get('connected', False):
+                server_tools = mcp_manager.get_tools(server_id)
+                if server_tools:
+                    if not mcp_tools:  # Only add header if we have tools
+                        st.subheader("MCP Tools")
+                    for tool in server_tools:
+                        tool_name = getattr(tool, "__name__", str(tool))
+                        st.write(f"- {tool_name} ({server_id})")
     
     # Display conversation history with thinking processes
     for i, message in enumerate(st.session_state.messages):
@@ -357,8 +445,22 @@ def main():
                 # Set the callback handler for this interaction
                 agent.callback_handler = stream_handler
                 
+                # Debug logging - print available tools
+                print("\n===== TOOL EXECUTION LOGS =====")
+                print(f"Processing user input: {user_input}")
+                
+                # List available tools using agent.tool instead of agent.tools
+                tool_names = []
+                if hasattr(agent, 'tool'):
+                    tool_names = [attr for attr in dir(agent.tool) if not attr.startswith('_')]
+                print(f"Available tools on agent: {', '.join(tool_names)}")
+                
                 # Process with agent - this will trigger streaming through the handler
+                print("Calling agent with user input...")
                 response = agent(user_input)
+                print(f"Agent response type: {type(response)}")
+                print(f"Agent response: {response}")
+                print("===== END TOOL EXECUTION LOGS =====\n")
                 
                 # Extract the final response text
                 response_text = extract_response_text(response)
@@ -380,6 +482,10 @@ def main():
             except Exception as e:
                 # Handle errors gracefully
                 error_message = f"Error: {str(e)}"
+                print(f"ERROR in agent execution: {str(e)}")
+                print(f"Error type: {type(e)}")
+                import traceback
+                print(traceback.format_exc())
                 response_placeholder.error(error_message)
                 st.session_state.messages.append({"role": "assistant", "content": error_message})
             

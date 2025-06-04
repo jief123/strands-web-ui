@@ -47,20 +47,138 @@ class StreamlitHandler:
         # Store the thinking content in session state to persist across rerenders
         if "thinking_content" not in st.session_state:
             st.session_state.thinking_content = ""
-    
+        
+        # Add buffers for collecting complete messages
+        self.current_reasoning = ""
+        self.current_message = ""
+        self.delta_buffer = ""
+        self.current_tool_calls = {}  # Track tool calls by ID
+        self.current_tool_results = {}  # Track tool results by ID
+        
     def __call__(self, **kwargs):
         """
-        Process events from the Strands agent.
+        Process events from the Strands agent with enhanced ReAct context logging.
         
         Args:
             **kwargs: Event data from the agent
         """
-        # Debug: Print the event type for troubleshooting
+        # Get event type
         event_type = next((k for k in kwargs.keys() if k not in ["data", "content_block_delta"]), None)
-        if event_type:
-            logger.debug(f"Event received: {event_type}")
+        
+        # Handle initialization - reset buffers
+        if "init_event_loop" in kwargs:
+            print("[ReAct - START] New interaction started")
+            self.current_reasoning = ""
+            self.current_message = ""
+            self.delta_buffer = ""
+            self.current_tool_calls = {}
+            self.current_tool_results = {}
+            self._handle_initialization()
+            return
             
-        # Handle initialization
+        # Handle reasoning text - collect complete reasoning
+        if event_type == "reasoningText":
+            reasoning_text = kwargs.get("reasoningText", "")
+            if isinstance(reasoning_text, dict) and "text" in reasoning_text:
+                reasoning_text = reasoning_text["text"]
+            self.current_reasoning += str(reasoning_text)
+            
+        # When reasoning is complete, output the full reasoning
+        elif event_type == "reasoning_signature":
+            if self.current_reasoning:
+                print(f"[ReAct - REASONING COMPLETE]\n{self.current_reasoning}")
+                self.current_reasoning = ""  # Reset after printing
+                
+        # Handle delta events - collect content but don't print every delta
+        elif event_type == "delta":
+            delta_content = kwargs.get("delta", {}).get("text", "")
+            if delta_content:
+                self.delta_buffer += delta_content
+                
+        # Handle message events - output complete messages
+        elif event_type == "message":
+            message = kwargs.get("message", {})
+            if isinstance(message, dict) and "content" in message:
+                content = message["content"]
+                full_text = ""
+                
+                # Extract text from content blocks
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict):
+                            if "text" in block:
+                                full_text += block["text"]
+                            elif "toolUse" in block:
+                                tool_use = block["toolUse"]
+                                tool_id = tool_use.get("toolUseId", "unknown")
+                                self.current_tool_calls[tool_id] = tool_use
+                                print(f"[ReAct - ACTION] Tool: {tool_use.get('name')}, Input: {tool_use.get('input')}")
+                            elif "toolResult" in block:
+                                tool_result = block["toolResult"]
+                                tool_id = tool_result.get("toolUseId", "unknown")
+                                self.current_tool_results[tool_id] = tool_result
+                                print(f"[ReAct - OBSERVATION] Tool: {tool_id}, Status: {tool_result.get('status')}")
+                                if "content" in tool_result:
+                                    print(f"[ReAct - OBSERVATION CONTENT] {tool_result['content']}")
+                
+                # Print the complete message if it's not empty
+                if full_text:
+                    print(f"[COMPLETE MESSAGE]\n{full_text}")
+                    
+                # Also print any buffered delta content if it wasn't part of a message
+                if self.delta_buffer:
+                    print(f"[COMPLETE DELTA CONTENT]\n{self.delta_buffer}")
+                    self.delta_buffer = ""  # Reset buffer
+                    
+        # Handle direct tool events
+        elif "tool_use" in kwargs:
+            tool_use = kwargs["tool_use"]
+            tool_id = tool_use.get("toolUseId", "unknown")
+            self.current_tool_calls[tool_id] = tool_use
+            print(f"[ReAct - ACTION DIRECT] Tool: {tool_use.get('name')}, Input: {tool_use.get('input')}")
+            
+        elif "tool_result" in kwargs:
+            tool_result = kwargs["tool_result"]
+            tool_id = tool_result.get("toolUseId", "unknown")
+            self.current_tool_results[tool_id] = tool_result
+            print(f"[ReAct - OBSERVATION DIRECT] Status: {tool_result.get('status')}")
+            if "content" in tool_result:
+                print(f"[ReAct - OBSERVATION CONTENT] {tool_result['content']}")
+                
+        # Handle event with potential MCP tool information
+        elif event_type == "event":
+            # Check for MCP tool information in various locations
+            if "current_tool_use" in kwargs:
+                tool = kwargs["current_tool_use"]
+                tool_id = tool.get("toolUseId", "unknown")
+                self.current_tool_calls[tool_id] = tool
+                print(f"[ReAct - ACTION MCP] Tool: {tool.get('name')}, Input: {tool.get('input')}")
+                
+            # Check for tool information in content
+            elif "content" in kwargs:
+                content = kwargs["content"]
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict):
+                            if "toolUse" in item:
+                                tool_use = item["toolUse"]
+                                tool_id = tool_use.get("toolUseId", "unknown")
+                                self.current_tool_calls[tool_id] = tool_use
+                                print(f"[ReAct - ACTION MCP] Tool: {tool_use.get('name')}, Input: {tool_use.get('input')}")
+                            elif "toolResult" in item:
+                                tool_result = item["toolResult"]
+                                tool_id = tool_result.get("toolUseId", "unknown")
+                                self.current_tool_results[tool_id] = tool_result
+                                print(f"[ReAct - OBSERVATION MCP] Tool: {tool_id}, Status: {tool_result.get('status')}")
+                                if "content" in tool_result:
+                                    print(f"[ReAct - OBSERVATION CONTENT] {tool_result['content']}")
+            
+            # For debugging - print full event data for unhandled events
+            # Uncomment this for debugging if needed
+            # else:
+            #     print(f"[DEBUG] Unhandled event data: {kwargs}")
+        
+        # Continue with the original handler logic for UI updates
         if "init_event_loop" in kwargs:
             self._handle_initialization()
             return
