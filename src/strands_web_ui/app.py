@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Strands Agent Streamlit Demo with MCP Integration
+Strands Agent Streamlit Demo with MCP Integration and Audio Transcription
 
 This example demonstrates how to create a simple chat interface for a Strands agent using Streamlit
-with Model Context Protocol (MCP) server integration.
+with Model Context Protocol (MCP) server integration and MP3 audio transcription capabilities.
 
 Run with:
     streamlit run app.py
@@ -12,6 +12,8 @@ Run with:
 import os
 import time
 import logging
+import asyncio
+import tempfile
 import streamlit as st
 from strands import Agent, tool
 from strands.models import BedrockModel
@@ -21,6 +23,14 @@ from strands_web_ui.mcp_server_manager import MCPServerManager
 from strands_web_ui.handlers.streamlit_handler import StreamlitHandler
 from strands_web_ui.utils.config_loader import load_config, load_mcp_config
 from strands_web_ui.utils.tool_loader import load_tools_from_config, get_available_tool_names
+
+# Import audio transcription tools
+try:
+    from strands_web_ui.tools.audio_transcribe_tool import transcribe_audio_file_sync, get_supported_languages
+    AUDIO_TRANSCRIPTION_AVAILABLE = True
+except ImportError as e:
+    AUDIO_TRANSCRIPTION_AVAILABLE = False
+    logging.warning(f"Audio transcription not available: {e}")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -114,6 +124,11 @@ def initialize_agent(config, mcp_manager=None):
         "workflow": workflow  # Add workflow to the map
     }
     
+    # Add audio transcription tools if available
+    if AUDIO_TRANSCRIPTION_AVAILABLE:
+        tool_map["audio_transcribe"] = transcribe_audio_file_sync
+        tool_map["supported_languages"] = get_supported_languages
+    
     # Select tools based on configuration
     tools = [search_knowledge_base]  # Start with our custom tool
     for tool_name in enabled_tool_names:
@@ -193,6 +208,44 @@ def main():
         layout="wide"
     )
     
+    # Add custom CSS for better UI
+    st.markdown("""
+    <style>
+    .media-upload-btn {
+        background-color: #f0f2f6;
+        border: 2px dashed #cccccc;
+        border-radius: 8px;
+        padding: 8px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    .media-upload-btn:hover {
+        border-color: #4CAF50;
+        background-color: #f8fff8;
+    }
+    .attachment-info {
+        background-color: #e8f4fd;
+        border-left: 4px solid #2196F3;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+    }
+    .transcription-result {
+        background-color: #f0f8ff;
+        border: 1px solid #b3d9ff;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+    .step-indicator {
+        color: #666;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Load configuration
     config = load_config()
     
@@ -247,8 +300,13 @@ def main():
             options=[
                 "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
                 "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                "anthropic.claude-3-sonnet-20240229-v1:0",
-                "anthropic.claude-3-haiku-20240307-v1:0"
+                "anthropic.claude-3-haiku-20240307-v1:0",
+                "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                "us.amazon.nova-premier-v1:0",
+                "us.amazon.nova-lite-v1:0",
+                "us.amazon.nova-pro-v1:0",
+                "us.meta.llama4-maverick-17b-instruct-v1:0",
+                "us.meta.llama4-scout-17b-instruct-v1:0"
             ],
             index=0
         )
@@ -409,6 +467,99 @@ def main():
                             """, unsafe_allow_html=True)
                         break
     
+    # Initialize session state for media upload
+    if "uploaded_audio_file" not in st.session_state:
+        st.session_state.uploaded_audio_file = None
+    if "audio_file_name" not in st.session_state:
+        st.session_state.audio_file_name = None
+    if "show_media_upload" not in st.session_state:
+        st.session_state.show_media_upload = False
+    
+    # Show attached file info if exists
+    if st.session_state.uploaded_audio_file is not None:
+        st.markdown(f"""
+        <div class="attachment-info">
+            📎 <strong>Attached:</strong> {st.session_state.audio_file_name}
+            <br><small>This audio file will be transcribed and included with your next message</small>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col_remove, col_change = st.columns([1, 1])
+        with col_remove:
+            if st.button("🗑️ Remove", key="remove_attachment"):
+                st.session_state.uploaded_audio_file = None
+                st.session_state.audio_file_name = None
+                st.rerun()
+        with col_change:
+            if st.button("📎 Change File", key="change_attachment"):
+                st.session_state.show_media_upload = True
+    
+    # Media upload section
+    if not st.session_state.uploaded_audio_file or st.session_state.show_media_upload:
+        # Media upload button
+        if not st.session_state.show_media_upload:
+            if st.button("📎 Attach Audio File", help="Upload MP3 file for transcription", key="media_upload_btn"):
+                st.session_state.show_media_upload = True
+                st.rerun()
+    
+    # Show media upload dialog if button was clicked
+    if st.session_state.show_media_upload:
+        with st.container():
+            st.markdown("### 📎 Attach Audio File")
+            
+            uploaded_file = st.file_uploader(
+                "Choose an MP3 file to transcribe",
+                type=['mp3'],
+                help="Upload an MP3 audio file. It will be transcribed and combined with your text message.",
+                key="audio_uploader"
+            )
+            
+            if uploaded_file is not None:
+                # Show file info
+                file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
+                st.info(f"📁 **File:** {uploaded_file.name} ({file_size_mb:.1f} MB)")
+                
+                # Configuration options
+                col_lang, col_region = st.columns(2)
+                with col_lang:
+                    language_options = st.multiselect(
+                        "🌍 Language Detection",
+                        options=["en-US", "id-ID", "zh-CN", "ja-JP", "ko-KR", "th-TH"],
+                        default=["en-US", "id-ID"],
+                        help="Select languages for automatic detection"
+                    )
+                
+                with col_region:
+                    aws_region = st.selectbox(
+                        "🌐 AWS Region",
+                        options=["ap-southeast-1", "us-east-1", "us-west-2", "eu-central-1"],
+                        index=0,
+                        help="AWS region for Transcribe service"
+                    )
+                
+                # Action buttons
+                col_attach, col_cancel = st.columns(2)
+                with col_attach:
+                    if st.button("✅ Attach File", type="primary", key="confirm_attach"):
+                        st.session_state.uploaded_audio_file = uploaded_file.getvalue()
+                        st.session_state.audio_file_name = uploaded_file.name
+                        st.session_state.audio_language_options = language_options
+                        st.session_state.audio_aws_region = aws_region
+                        st.session_state.show_media_upload = False
+                        st.success(f"📎 Attached: {uploaded_file.name}")
+                        time.sleep(1)  # Brief pause to show success message
+                        st.rerun()
+                
+                with col_cancel:
+                    if st.button("❌ Cancel", key="cancel_attach"):
+                        st.session_state.show_media_upload = False
+                        st.rerun()
+            else:
+                # Cancel button when no file selected
+                if st.button("❌ Cancel", key="cancel_no_file"):
+                    st.session_state.show_media_upload = False
+                    st.rerun()
+    
     # Get user input
     user_input = st.chat_input("Ask something...", disabled=st.session_state.processing)
     
@@ -416,53 +567,137 @@ def main():
         # Set processing flag to prevent multiple submissions
         st.session_state.processing = True
         
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": user_input})
+        # Check if there's an audio file attached
+        has_audio_attachment = st.session_state.uploaded_audio_file is not None
+        final_input = user_input
         
-        # Display user message
+        # Display user message first
         with st.chat_message("user"):
+            if has_audio_attachment:
+                st.markdown(f"📎 **Attached:** {st.session_state.audio_file_name}")
             st.markdown(user_input)
+        
+        # Add user message to chat history
+        display_message = user_input
+        if has_audio_attachment:
+            display_message = f"📎 {st.session_state.audio_file_name}\n\n{user_input}"
+        st.session_state.messages.append({"role": "user", "content": display_message})
         
         # Create a placeholder for the streaming response
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             
-            # Get UI config
-            ui_config = st.session_state.config.get("ui", {})
-            update_interval = ui_config.get("update_interval", 0.1)
-            
-            # Create improved stream handler
-            stream_handler = StreamlitHandler(
-                placeholder=response_placeholder,
-                update_interval=update_interval
-            )
-            
             try:
-                # Use the existing agent instance from session state
-                # This ensures conversation history is maintained
-                agent = st.session_state.agent
+                # Step 1: Process audio if attached
+                if has_audio_attachment and AUDIO_TRANSCRIPTION_AVAILABLE:
+                    # Show transcription progress
+                    response_placeholder.markdown("🎤 **Step 1/2:** Transcribing audio...")
+                    
+                    # Save audio file temporarily
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                        tmp_file.write(st.session_state.uploaded_audio_file)
+                        tmp_file_path = tmp_file.name
+                    
+                    try:
+                        # Transcribe audio
+                        transcription_result = transcribe_audio_file_sync(
+                            file_path=tmp_file_path,
+                            language_options=st.session_state.get("audio_language_options", ["en-US", "id-ID"]),
+                            region=st.session_state.get("audio_aws_region", "ap-southeast-1")
+                        )
+                        
+                        # Clean up temporary file
+                        os.unlink(tmp_file_path)
+                        
+                        if transcription_result["status"] == "success":
+                            transcript = transcription_result["transcript"]
+                            detected_language = transcription_result["language_code"]
+                            confidence = transcription_result.get("confidence")
+                            
+                            # Show transcription result with better formatting
+                            transcription_display = f"""
+<div class="transcription-result">
+<div class="step-indicator">🎤 Step 1/2: Audio Transcription Completed</div>
+
+<strong>📋 Transcription Results:</strong>
+<ul>
+<li><strong>Language Detected:</strong> {detected_language or 'Unknown'}</li>
+<li><strong>Confidence:</strong> {f'{confidence:.1%}' if confidence else 'N/A'}</li>
+<li><strong>File:</strong> {st.session_state.audio_file_name}</li>
+</ul>
+
+<strong>📝 Transcript:</strong>
+<div style="background-color: white; padding: 10px; border-radius: 4px; margin: 10px 0; border-left: 4px solid #4CAF50;">
+<em>"{transcript}"</em>
+</div>
+
+<div class="step-indicator">🤖 Step 2/2: Processing with AI Agent...</div>
+</div>
+"""
+                            response_placeholder.markdown(transcription_display, unsafe_allow_html=True)
+                            
+                            # Combine transcript with user input
+                            final_input = f"""User Request: {user_input}
+
+Audio Transcription (Language: {detected_language}):
+{transcript}"""
+                            
+                            # Clear audio attachment after use
+                            st.session_state.uploaded_audio_file = None
+                            st.session_state.audio_file_name = None
+                            
+                        else:
+                            # Transcription failed, show error and continue with text only
+                            error_msg = f"""
+<div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
+⚠️ <strong>Audio transcription failed:</strong> {transcription_result['message']}
+<br><br>
+<em>Continuing with text input only...</em>
+</div>
+"""
+                            response_placeholder.markdown(error_msg, unsafe_allow_html=True)
+                            time.sleep(3)  # Show error for 3 seconds
+                            
+                    except Exception as e:
+                        # Handle transcription errors
+                        error_msg = f"""
+<div style="background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 15px; margin: 10px 0;">
+❌ <strong>Audio processing error:</strong> {str(e)}
+<br><br>
+<em>Continuing with text input only...</em>
+</div>
+"""
+                        response_placeholder.markdown(error_msg, unsafe_allow_html=True)
+                        time.sleep(3)  # Show error for 3 seconds
+                        
+                        # Clean up temporary file if it exists
+                        if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+                            os.unlink(tmp_file_path)
                 
-                # Set the callback handler for this interaction
+                # Step 2: Process with agent
+                # Get UI config
+                ui_config = st.session_state.config.get("ui", {})
+                update_interval = ui_config.get("update_interval", 0.1)
+                
+                # Create improved stream handler
+                stream_handler = StreamlitHandler(
+                    placeholder=response_placeholder,
+                    update_interval=update_interval
+                )
+                
+                # Use the existing agent instance from session state
+                agent = st.session_state.agent
                 agent.callback_handler = stream_handler
                 
-                # Debug logging - print available tools
-                print("\n===== TOOL EXECUTION LOGS =====")
-                print(f"Processing user input: {user_input}")
+                # Debug logging
+                print("\n===== INTEGRATED AUDIO + TEXT PROCESSING =====")
+                print(f"Original user input: {user_input}")
+                print(f"Has audio attachment: {has_audio_attachment}")
+                print(f"Final input to agent: {final_input}")
+                print("=" * 50)
                 
-                # List available tools using agent.tool instead of agent.tools
-                tool_names = []
-                if hasattr(agent, 'tool'):
-                    tool_names = [attr for attr in dir(agent.tool) if not attr.startswith('_')]
-                print(f"Available tools on agent: {', '.join(tool_names)}")
-                
-                # Process with agent - this will trigger streaming through the handler
-                print("Calling agent with user input...")
-                response = agent(user_input)
-                print(f"Agent response type: {type(response)}")
-                print(f"Agent response: {response}")
-                print("===== END TOOL EXECUTION LOGS =====\n")
-                
-                # Extract the final response text
+                # Process with agent
+                response = agent(final_input)
                 response_text = extract_response_text(response)
                 
                 # If no streaming occurred, show the full response

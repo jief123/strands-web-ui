@@ -6,7 +6,7 @@
     "max_tokens": 24000
   },
   "agent": {
-    "system_prompt": "You are a helpful assistant that provides concise, accurate information.",
+    "system_prompt": "You are a helpful assistant that provides concise, accurate information. When processing transcribed audio content, please analyze the content and provide relevant responses based on the detected language and context.",
     "max_parallel_tools": 4,
     "record_direct_tool_call": true,
     "hot_reload_tools": true,
@@ -21,9 +21,14 @@
     "update_interval": 0.1
   },
   "tools": {
-    "enabled": ["calculator", "editor", "environment", "file_read", "file_write", "http_request", "python_repl", "shell", "think", "workflow"],
+    "enabled": ["calculator", "editor", "environment", "file_read", "file_write", "http_request", "python_repl", "shell", "think", "workflow", "audio_transcribe", "supported_languages"],
     "options": {
       "auto_approve": true
     }
+  },
+  "audio": {
+    "default_region": "ap-southeast-1",
+    "supported_languages": ["en-US", "id-ID"],
+    "max_file_size_mb": 100
   }
 }

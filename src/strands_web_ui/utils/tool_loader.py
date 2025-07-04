@@ -111,11 +111,13 @@ def load_tools_from_config(config: Dict[str, Any]) -> List:
 
 def get_available_tool_names() -> List[str]:
     """
-    Get a list of all available tool names from strands_tools.
+    Get a list of all available tool names from strands_tools and custom tools.
     
     Returns:
         List of tool names
     """
+    tool_names = []
+    
     try:
         # Get all Python files in the strands_tools directory
         import strands_tools
@@ -126,17 +128,15 @@ def get_available_tool_names() -> List[str]:
         strands_tools_dir = os.path.dirname(inspect.getfile(strands_tools))
         
         # Get all Python files in the directory
-        tool_names = []
         for file in os.listdir(strands_tools_dir):
             if file.endswith('.py') and not file.startswith('__'):
                 tool_name = file[:-3]  # Remove .py extension
                 tool_names.append(tool_name)
         
-        return tool_names
     except ImportError:
         logger.error("Failed to import strands_tools. Make sure it's installed.")
         # Return a default list of common tool names when strands_tools is not available
-        return [
+        tool_names = [
             "calculator",
             "editor",
             "environment",
@@ -149,4 +149,10 @@ def get_available_tool_names() -> List[str]:
         ]
     except Exception as e:
         logger.error(f"Error getting available tool names: {e}")
-        return []
+        tool_names = []
+    
+    # Add custom tools
+    custom_tools = ["audio_transcribe", "supported_languages"]
+    tool_names.extend(custom_tools)
+    
+    return tool_names
