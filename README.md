@@ -78,16 +78,19 @@ The application can be configured through JSON files in the `config` directory:
 
 ### Model Settings
 
-Configure the model provider, model ID, region, and token limits:
+Configure the model provider, model ID, region, token limits, and streaming behavior:
 
 ```json
 "model": {
     "provider": "bedrock",
     "model_id": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     "region": "us-east-1",
-    "max_tokens": 24000
+    "max_tokens": 24000,
+    "enable_streaming": true
 }
 ```
+
+- `enable_streaming`: Enable/disable real-time streaming of responses (default: true)
 
 ### Agent Settings
 

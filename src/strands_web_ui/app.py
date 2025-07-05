@@ -24,6 +24,12 @@ from strands_web_ui.handlers.streamlit_handler import StreamlitHandler
 from strands_web_ui.utils.config_loader import load_config, load_mcp_config
 from strands_web_ui.utils.tool_loader import load_tools_from_config, get_available_tool_names
 
+# Simple no-op handler for non-streaming mode
+class NoOpHandler:
+    """A no-operation handler that does nothing with events."""
+    def __call__(self, **kwargs):
+        pass
+
 # Import audio transcription tools
 try:
     from strands_web_ui.tools.audio_transcribe_tool import transcribe_audio_file_sync, get_supported_languages
@@ -69,6 +75,9 @@ def initialize_agent(config, mcp_manager=None):
     # Create model based on config
     model_config = config.get("model", {})
     
+    # Get streaming preference from config
+    enable_streaming = model_config.get("enable_streaming", True)
+    
     # Add native thinking parameter if enabled
     additional_request_fields = {}
     agent_config = config.get("agent", {})
@@ -86,11 +95,22 @@ def initialize_agent(config, mcp_manager=None):
             }
         }
     
-    model = BedrockModel(
-        model_id=model_config.get("model_id", "us.anthropic.claude-3-7-sonnet-20250219-v1:0"),
-        region=model_config.get("region", "us-east-1"),
-        additional_request_fields=additional_request_fields
-    )
+    # Try to create model with streaming parameter if supported
+    try:
+        model = BedrockModel(
+            model_id=model_config.get("model_id", "us.anthropic.claude-3-7-sonnet-20250219-v1:0"),
+            region=model_config.get("region", "us-east-1"),
+            additional_request_fields=additional_request_fields,
+            streaming=enable_streaming  # Try to pass streaming parameter
+        )
+    except TypeError:
+        # If streaming parameter is not supported, fall back to default
+        logger.warning("BedrockModel does not support streaming parameter, using default behavior")
+        model = BedrockModel(
+            model_id=model_config.get("model_id", "us.anthropic.claude-3-7-sonnet-20250219-v1:0"),
+            region=model_config.get("region", "us-east-1"),
+            additional_request_fields=additional_request_fields
+        )
     
     # Import pre-built tools directly
     from strands_tools import (
@@ -317,6 +337,13 @@ def main():
             value=config["agent"].get("enable_native_thinking", True)
         )
         
+        # Add streaming toggle
+        enable_streaming = st.checkbox(
+            "Enable Streaming Responses",
+            value=config["model"].get("enable_streaming", True),
+            help="Enable real-time streaming of responses"
+        )
+        
         # Add conversation window size slider
         window_size = st.slider(
             "Conversation Window Size",
@@ -351,6 +378,7 @@ def main():
             # Update config
             config["model"]["region"] = region
             config["model"]["model_id"] = model_id
+            config["model"]["enable_streaming"] = enable_streaming
             config["agent"]["system_prompt"] = system_prompt
             config["agent"]["enable_native_thinking"] = enable_native_thinking
             config["conversation"]["window_size"] = window_size
@@ -675,44 +703,63 @@ Audio Transcription (Language: {detected_language}):
                             os.unlink(tmp_file_path)
                 
                 # Step 2: Process with agent
-                # Get UI config
-                ui_config = st.session_state.config.get("ui", {})
-                update_interval = ui_config.get("update_interval", 0.1)
-                
-                # Create improved stream handler
-                stream_handler = StreamlitHandler(
-                    placeholder=response_placeholder,
-                    update_interval=update_interval
-                )
-                
-                # Use the existing agent instance from session state
-                agent = st.session_state.agent
-                agent.callback_handler = stream_handler
+                # Check streaming config
+                streaming_enabled = st.session_state.config["model"].get("enable_streaming", True)
                 
                 # Debug logging
                 print("\n===== INTEGRATED AUDIO + TEXT PROCESSING =====")
                 print(f"Original user input: {user_input}")
                 print(f"Has audio attachment: {has_audio_attachment}")
                 print(f"Final input to agent: {final_input}")
+                print(f"Streaming enabled: {streaming_enabled}")
                 print("=" * 50)
                 
-                # Process with agent
-                response = agent(final_input)
-                response_text = extract_response_text(response)
+                # Use the existing agent instance from session state
+                agent = st.session_state.agent
                 
-                # If no streaming occurred, show the full response
-                if not stream_handler.message_container:
-                    response_placeholder.markdown(response_text)
+                if streaming_enabled:
+                    # Streaming mode (existing behavior)
+                    ui_config = st.session_state.config.get("ui", {})
+                    update_interval = ui_config.get("update_interval", 0.1)
+                    
+                    stream_handler = StreamlitHandler(
+                        placeholder=response_placeholder,
+                        update_interval=update_interval
+                    )
+                    
+                    agent.callback_handler = stream_handler
+                    
+                    # Process with streaming
+                    response = agent(final_input)
+                    response_text = extract_response_text(response)
+                    
+                    # Handle streaming response display
+                    if not stream_handler.message_container:
+                        response_placeholder.markdown(response_text)
+                    else:
+                        response_placeholder.markdown(stream_handler.message_container)
+                    
+                    # Make sure thinking content is preserved after the response
+                    if stream_handler.thinking_container and not stream_handler.thinking_preserved:
+                        stream_handler._preserve_thinking_content()
+                    
+                    final_response_text = response_text or stream_handler.message_container
+                    
                 else:
-                    # Ensure the final complete response is displayed
-                    response_placeholder.markdown(stream_handler.message_container)
+                    # Non-streaming mode
+                    with st.spinner("Processing your request..."):
+                        agent.callback_handler = NoOpHandler()  # Use no-op handler instead of None
+                        
+                        # Process without streaming
+                        response = agent(final_input)
+                        response_text = extract_response_text(response)
+                        
+                        # Display complete response at once
+                        response_placeholder.markdown(response_text)
+                        final_response_text = response_text
                 
                 # Add assistant response to chat history
-                st.session_state.messages.append({"role": "assistant", "content": response_text or stream_handler.message_container})
-                
-                # Make sure thinking content is preserved after the response
-                if stream_handler.thinking_container and not stream_handler.thinking_preserved:
-                    stream_handler._preserve_thinking_content()
+                st.session_state.messages.append({"role": "assistant", "content": final_response_text})
                 
             except Exception as e:
                 # Handle errors gracefully

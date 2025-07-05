@@ -3,7 +3,8 @@
         "provider": "bedrock",
         "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
         "region": "us-east-1",
-        "max_tokens": 4096
+        "max_tokens": 4096,
+        "enable_streaming": false
     },
     "agent": {
         "system_prompt": "You are a helpful assistant that provides concise, accurate information.",
