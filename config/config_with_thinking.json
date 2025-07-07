@@ -30,6 +30,7 @@
   "audio": {
     "default_region": "ap-southeast-1",
     "supported_languages": ["en-US", "id-ID"],
+    "supported_formats": ["mp3", "wav"],
     "max_file_size_mb": 100
   }
 }

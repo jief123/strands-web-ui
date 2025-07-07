@@ -8,6 +8,7 @@ A Streamlit-based web interface for Strands Agents with thinking process visuali
 - 💭 Visualization of agent thinking process
 - 🔧 Tool execution and result display
 - 🔌 MCP server integration for extended capabilities
+- 🎤 Audio transcription support (MP3 and WAV files)
 - ⚙️ Configurable model and agent parameters
 - 💬 Conversation history management
 

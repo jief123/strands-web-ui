@@ -267,7 +267,7 @@ def main():
     """, unsafe_allow_html=True)
     
     # Load configuration
-    config = load_config()
+    initial_config = load_config()
     
     # Initialize MCP server manager
     if "mcp_manager" not in st.session_state:
@@ -279,17 +279,20 @@ def main():
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
+    if "config" not in st.session_state:
+        st.session_state.config = initial_config
+    
     if "agent" not in st.session_state:
-        st.session_state.agent = initialize_agent(config, st.session_state.mcp_manager)
+        st.session_state.agent = initialize_agent(st.session_state.config, st.session_state.mcp_manager)
         
     if "processing" not in st.session_state:
         st.session_state.processing = False
-    
-    if "config" not in st.session_state:
-        st.session_state.config = config
         
     if "thinking_history" not in st.session_state:
         st.session_state.thinking_history = []
+    
+    # Use session state config for UI controls
+    config = st.session_state.config
     
     st.title("🤖 Strands Agent Chat with MCP Integration")
     st.markdown("""
@@ -526,7 +529,7 @@ def main():
     if not st.session_state.uploaded_audio_file or st.session_state.show_media_upload:
         # Media upload button
         if not st.session_state.show_media_upload:
-            if st.button("📎 Attach Audio File", help="Upload MP3 file for transcription", key="media_upload_btn"):
+            if st.button("📎 Attach Audio File", help="Upload MP3 or WAV file for transcription", key="media_upload_btn"):
                 st.session_state.show_media_upload = True
                 st.rerun()
     
@@ -536,9 +539,9 @@ def main():
             st.markdown("### 📎 Attach Audio File")
             
             uploaded_file = st.file_uploader(
-                "Choose an MP3 file to transcribe",
-                type=['mp3'],
-                help="Upload an MP3 audio file. It will be transcribed and combined with your text message.",
+                "Choose an MP3 or WAV file to transcribe",
+                type=['mp3', 'wav'],
+                help="Upload an MP3 or WAV audio file. It will be transcribed and combined with your text message.",
                 key="audio_uploader"
             )
             
@@ -622,7 +625,12 @@ def main():
                     response_placeholder.markdown("🎤 **Step 1/2:** Transcribing audio...")
                     
                     # Save audio file temporarily
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                    # Determine file extension from the original filename
+                    file_extension = st.session_state.audio_file_name.lower().split('.')[-1]
+                    if file_extension not in ['mp3', 'wav']:
+                        file_extension = 'mp3'  # Default fallback
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp_file:
                         tmp_file.write(st.session_state.uploaded_audio_file)
                         tmp_file_path = tmp_file.name
                     

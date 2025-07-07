@@ -1,7 +1,7 @@
 """
 Audio transcription tool for Strands agents.
 
-This tool allows agents to transcribe MP3 audio files using AWS Transcribe
+This tool allows agents to transcribe MP3 and WAV audio files using AWS Transcribe
 with automatic language detection.
 """
 
@@ -18,12 +18,12 @@ async def transcribe_audio_file(file_path: str,
                               language_options: List[str] = None,
                               region: str = "ap-southeast-1") -> Dict[str, Any]:
     """
-    Transcribe an MP3 audio file using AWS Transcribe with automatic language detection.
+    Transcribe an MP3 or WAV audio file using AWS Transcribe with automatic language detection.
     
     This tool supports automatic detection between Indonesian (id-ID) and English (en-US).
     
     Args:
-        file_path: Path to the MP3 audio file to transcribe
+        file_path: Path to the MP3 or WAV audio file to transcribe
         language_options: List of language codes to consider (default: ["en-US", "id-ID"])
         region: AWS region for Transcribe service (default: "ap-southeast-1")
         
@@ -44,10 +44,10 @@ async def transcribe_audio_file(file_path: str,
         # Create transcriber
         transcriber = create_transcriber(region=region)
         
-        # Read the MP3 file
+        # Read the audio file
         try:
             with open(file_path, "rb") as f:
-                mp3_data = f.read()
+                audio_data = f.read()
         except FileNotFoundError:
             return {
                 "status": "error",
@@ -67,14 +67,30 @@ async def transcribe_audio_file(file_path: str,
                 "segments": []
             }
         
-        # Transcribe the audio
+        # Determine file type and transcribe
         logger.info(f"Starting transcription of {file_path}")
-        result = await transcriber.transcribe_mp3_file(mp3_data, language_options)
+        
+        # Check file extension to determine format
+        file_extension = file_path.lower().split('.')[-1]
+        
+        if file_extension == 'mp3':
+            result = await transcriber.transcribe_mp3_file(audio_data, language_options)
+        elif file_extension == 'wav':
+            result = await transcriber.transcribe_wav_file(audio_data, language_options)
+        else:
+            return {
+                "status": "error",
+                "message": f"Unsupported file format: {file_extension}. Supported formats: mp3, wav",
+                "transcript": "",
+                "language_code": None,
+                "confidence": None,
+                "segments": []
+            }
         
         # Format the response
         response = {
             "status": "success",
-            "message": f"Successfully transcribed audio file. Detected language: {result.language_code}",
+            "message": f"Successfully transcribed {file_extension.upper()} audio file. Detected language: {result.language_code}",
             "transcript": result.transcript,
             "language_code": result.language_code,
             "confidence": result.confidence,
@@ -115,8 +131,9 @@ def get_supported_languages() -> Dict[str, Any]:
             "th-TH": "Thai",
             "vi-VN": "Vietnamese"
         },
+        "supported_formats": ["mp3", "wav"],
         "default_options": ["en-US", "id-ID"],
-        "message": "These are the supported languages for audio transcription"
+        "message": "These are the supported languages and formats for audio transcription"
     }
 
 # Synchronous wrapper for compatibility
@@ -128,7 +145,7 @@ def transcribe_audio_file_sync(file_path: str,
     Synchronous wrapper for transcribe_audio_file.
     
     Args:
-        file_path: Path to the MP3 audio file to transcribe
+        file_path: Path to the MP3 or WAV audio file to transcribe
         language_options: List of language codes to consider
         region: AWS region for Transcribe service
         
