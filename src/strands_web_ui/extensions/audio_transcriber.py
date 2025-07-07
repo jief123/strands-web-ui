@@ -491,5 +491,93 @@ async def example_usage():
     print(f"Language: {result.language_code}")
     print(f"Confidence: {result.confidence}")
 
+# Convenience functions for app integration
+def transcribe_audio_file_sync(file_path: str, language_options: list = None, region: str = "ap-southeast-1"):
+    """
+    Synchronous audio transcription using extensions.
+    """
+    try:
+        # Set default language options
+        if language_options is None:
+            language_options = ["en-US", "id-ID"]
+        
+        # Create transcriber
+        transcriber = create_transcriber(region=region)
+        
+        # Read the audio file
+        with open(file_path, "rb") as f:
+            audio_data = f.read()
+        
+        # Determine file type and transcribe
+        file_extension = file_path.lower().split('.')[-1]
+        
+        # Run async transcription
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        if file_extension == 'mp3':
+            result = loop.run_until_complete(transcriber.transcribe_mp3_file(audio_data, language_options))
+        elif file_extension == 'wav':
+            result = loop.run_until_complete(transcriber.transcribe_wav_file(audio_data, language_options))
+        else:
+            return {
+                "status": "error",
+                "message": f"Unsupported file format: {file_extension}",
+                "transcript": "",
+                "language_code": None,
+                "confidence": None,
+                "segments": []
+            }
+        
+        loop.close()
+        
+        return {
+            "status": "success",
+            "message": f"Successfully transcribed {file_extension.upper()} audio file. Detected language: {result.language_code}",
+            "transcript": result.transcript,
+            "language_code": result.language_code,
+            "confidence": result.confidence,
+            "segments": result.segments
+        }
+        
+    except FileNotFoundError:
+        return {
+            "status": "error",
+            "message": f"Audio file not found: {file_path}",
+            "transcript": "",
+            "language_code": None,
+            "confidence": None,
+            "segments": []
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Transcription failed: {str(e)}",
+            "transcript": "",
+            "language_code": None,
+            "confidence": None,
+            "segments": []
+        }
+
+def get_supported_languages():
+    """
+    Get supported languages for audio transcription.
+    """
+    return {
+        "status": "success",
+        "supported_languages": {
+            "en-US": "English (United States)",
+            "id-ID": "Indonesian (Indonesia)",
+            "zh-CN": "Chinese (Simplified)",
+            "ja-JP": "Japanese",
+            "ko-KR": "Korean",
+            "th-TH": "Thai",
+            "vi-VN": "Vietnamese"
+        },
+        "supported_formats": ["mp3", "wav"],
+        "default_options": ["en-US", "id-ID"],
+        "message": "These are the supported languages and formats for audio transcription"
+    }
+
 if __name__ == "__main__":
     asyncio.run(example_usage())

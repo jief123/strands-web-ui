@@ -13,23 +13,13 @@ def load_config(config_path: str = None) -> Dict[str, Any]:
     
     Args:
         config_path: Path to the configuration file. If not provided, 
-                    will look in the config directory.
+                    will load config/config.json.
     
     Returns:
         Dict[str, Any]: Configuration dictionary
     """
     if not config_path:
-        # Try to find config in standard locations
-        possible_paths = [
-            "config_with_thinking.json",
-            "config/config_with_thinking.json",
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "config_with_thinking.json")
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                config_path = path
-                break
+        config_path = "config/config.json"
     
     try:
         if config_path and os.path.exists(config_path):
@@ -70,23 +60,13 @@ def load_mcp_config(config_path: str = None) -> Dict[str, Any]:
     
     Args:
         config_path: Path to the MCP configuration file. If not provided, 
-                    will look in the config directory.
+                    will load config/mcp_config.json.
     
     Returns:
         Dict[str, Any]: MCP configuration dictionary
     """
     if not config_path:
-        # Try to find config in standard locations
-        possible_paths = [
-            "mcp_config.json",
-            "config/mcp_config.json",
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "config", "mcp_config.json")
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                config_path = path
-                break
+        config_path = "config/mcp_config.json"
     
     try:
         if config_path and os.path.exists(config_path):

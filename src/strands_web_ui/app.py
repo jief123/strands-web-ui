@@ -30,9 +30,9 @@ class NoOpHandler:
     def __call__(self, **kwargs):
         pass
 
-# Import audio transcription tools
+# Import audio transcription extensions
 try:
-    from strands_web_ui.tools.audio_transcribe_tool import transcribe_audio_file_sync, get_supported_languages
+    from strands_web_ui.extensions.audio_transcriber import transcribe_audio_file_sync, get_supported_languages
     AUDIO_TRANSCRIPTION_AVAILABLE = True
 except ImportError as e:
     AUDIO_TRANSCRIPTION_AVAILABLE = False
@@ -42,24 +42,7 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define some example tools
-@tool
-def search_knowledge_base(query: str) -> dict:
-    """
-    Search the knowledge base for information.
-    
-    Args:
-        query: The search query
-        
-    Returns:
-        Relevant information from the knowledge base
-    """
-    # Simulate search delay
-    time.sleep(1)
-    return {
-        "status": "success",
-        "content": [{"text": f"Found information about: {query}. This is simulated knowledge base content."}]
-    }
+# Example tools can be defined here if needed
 
 def initialize_agent(config, mcp_manager=None):
     """
@@ -144,13 +127,8 @@ def initialize_agent(config, mcp_manager=None):
         "workflow": workflow  # Add workflow to the map
     }
     
-    # Add audio transcription tools if available
-    if AUDIO_TRANSCRIPTION_AVAILABLE:
-        tool_map["audio_transcribe"] = transcribe_audio_file_sync
-        tool_map["supported_languages"] = get_supported_languages
-    
     # Select tools based on configuration
-    tools = [search_knowledge_base]  # Start with our custom tool
+    tools = []  # Start with empty tools list
     for tool_name in enabled_tool_names:
         if tool_name in tool_map:
             tools.append(tool_map[tool_name])
