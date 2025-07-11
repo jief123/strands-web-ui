@@ -7,6 +7,7 @@ with streaming responses, thinking process visualization, and tool execution.
 
 import time
 import logging
+import re
 import streamlit as st
 from typing import Dict, Any, Optional
 
@@ -55,6 +56,18 @@ class StreamlitHandler:
         self.current_tool_calls = {}  # Track tool calls by ID
         self.current_tool_results = {}  # Track tool results by ID
         
+        # Add a global content buffer to catch all text before filtering
+        self.global_content_buffer = ""
+        self.last_displayed_content = ""
+        
+        # Add a flag to track when tools are being used
+        self.tools_in_use = False
+        self.suppress_reasoning = True  # Aggressively suppress reasoning content
+        
+        # Add a buffer to collect all content and only display final clean response
+        self.content_buffer = ""
+        self.final_response_started = False
+        
     def __call__(self, **kwargs):
         """
         Process events from the Strands agent with enhanced ReAct context logging.
@@ -76,23 +89,32 @@ class StreamlitHandler:
             self._handle_initialization()
             return
             
-        # Handle reasoning text - collect complete reasoning
+        # Handle reasoning text - collect complete reasoning but don't display in main UI
         if event_type == "reasoningText":
             reasoning_text = kwargs.get("reasoningText", "")
             if isinstance(reasoning_text, dict) and "text" in reasoning_text:
                 reasoning_text = reasoning_text["text"]
             self.current_reasoning += str(reasoning_text)
+            # Handle this as thinking content for UI display
+            self._handle_thinking_content(reasoning_text)
+            return  # Don't process further to avoid mixing with response content
             
         # When reasoning is complete, output the full reasoning
         elif event_type == "reasoning_signature":
             if self.current_reasoning:
                 print(f"[ReAct - REASONING COMPLETE]\n{self.current_reasoning}")
                 self.current_reasoning = ""  # Reset after printing
+                self._handle_thinking_end()
+            return  # Don't process further
                 
         # Handle delta events - collect content but don't print every delta
         elif event_type == "delta":
             delta_content = kwargs.get("delta", {}).get("text", "")
-            if delta_content:
+            # AGGRESSIVE FILTERING: Block ALL delta content during tool usage or if it looks like reasoning
+            if (delta_content and not self.is_thinking and 
+                not self.tools_in_use and 
+                not self._is_reasoning_text(delta_content) and 
+                not self._is_small_reasoning_fragment(delta_content)):
                 self.delta_buffer += delta_content
                 
         # Handle message events - output complete messages
@@ -107,7 +129,9 @@ class StreamlitHandler:
                     for block in content:
                         if isinstance(block, dict):
                             if "text" in block:
-                                full_text += block["text"]
+                                # Only add to full_text if we're not in thinking mode
+                                if not self.is_thinking:
+                                    full_text += block["text"]
                             elif "toolUse" in block:
                                 tool_use = block["toolUse"]
                                 tool_id = tool_use.get("toolUseId", "unknown")
@@ -121,13 +145,20 @@ class StreamlitHandler:
                                 if "content" in tool_result:
                                     print(f"[ReAct - OBSERVATION CONTENT] {tool_result['content']}")
                 
-                # Print the complete message if it's not empty
-                if full_text:
-                    print(f"[COMPLETE MESSAGE]\n{full_text}")
+                # Filter reasoning patterns from the complete message
+                if full_text and not self.is_thinking:
+                    filtered_text = self._filter_reasoning_patterns(full_text)
+                    if filtered_text:
+                        print(f"[COMPLETE MESSAGE]\n{filtered_text}")
+                        # Add to message container for UI display
+                        self.message_container += filtered_text
                     
                 # Also print any buffered delta content if it wasn't part of a message
-                if self.delta_buffer:
-                    print(f"[COMPLETE DELTA CONTENT]\n{self.delta_buffer}")
+                if self.delta_buffer and not self.is_thinking:
+                    filtered_delta = self._filter_reasoning_patterns(self.delta_buffer)
+                    if filtered_delta:
+                        print(f"[COMPLETE DELTA CONTENT]\n{filtered_delta}")
+                        self.message_container += filtered_delta
                     self.delta_buffer = ""  # Reset buffer
                     
         # Handle direct tool events
@@ -135,12 +166,19 @@ class StreamlitHandler:
             tool_use = kwargs["tool_use"]
             tool_id = tool_use.get("toolUseId", "unknown")
             self.current_tool_calls[tool_id] = tool_use
+            self.tools_in_use = True  # Set flag to suppress text during tool usage
+            # Clear any accumulated reasoning text when tools start
+            self.message_container = ""
+            self.delta_buffer = ""
             print(f"[ReAct - ACTION DIRECT] Tool: {tool_use.get('name')}, Input: {tool_use.get('input')}")
             
         elif "tool_result" in kwargs:
             tool_result = kwargs["tool_result"]
             tool_id = tool_result.get("toolUseId", "unknown")
             self.current_tool_results[tool_id] = tool_result
+            # Check if all tools are complete
+            if len(self.current_tool_results) >= len(self.current_tool_calls):
+                self.tools_in_use = False  # Allow text again after all tools complete
             print(f"[ReAct - OBSERVATION DIRECT] Status: {tool_result.get('status')}")
             if "content" in tool_result:
                 print(f"[ReAct - OBSERVATION CONTENT] {tool_result['content']}")
@@ -217,6 +255,181 @@ class StreamlitHandler:
         if "message" in kwargs and not self.thinking_preserved:
             # Make sure thinking content is preserved
             self._preserve_thinking_content()
+    
+    def _is_reasoning_text(self, text):
+        """
+        Check if text contains reasoning patterns that should be filtered out.
+        More aggressive filtering for fragmented reasoning content.
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            bool: True if text appears to be reasoning content
+        """
+        if not text or len(text.strip()) < 2:
+            return False
+            
+        text_lower = text.lower().strip()
+        
+        # Full reasoning indicators
+        reasoning_indicators = [
+            "i'll use the browser tool",
+            "let me search for",
+            "i'll search for", 
+            "let me try",
+            "i need to",
+            "now let me",
+            "let me click",
+            "i'll click",
+            "based on the search results",
+            "let me now take",
+            "i'm receiving large responses",
+            "let me try a different approach",
+            "let me try another",
+            "now, let me look at",
+            "let me look at one of",
+            "i'll help you search",
+            "let me use the browser",
+        ]
+        
+        # Check for full reasoning indicators
+        for indicator in reasoning_indicators:
+            if indicator in text_lower:
+                return True
+        
+        # Aggressive filtering for fragments that are likely reasoning
+        reasoning_fragments = [
+            "search for", "use the browser", "click the", "look at", 
+            "try another", "try a different", "now let", "let me",
+            "i'll", "based on", "search query", "search button",
+            "search results", "informative search", "comprehensive summary",
+            "latest samsung", "genai use cases", "galaxy phones",
+            "samsung galaxy", "browser to look", "help me provide",
+            "better visualize", "take a screenshot"
+        ]
+        
+        # If text is short and contains reasoning fragments, filter it out
+        if len(text.strip()) < 150:  # Increased threshold
+            for fragment in reasoning_fragments:
+                if fragment in text_lower:
+                    return True
+        
+        # Filter out very short fragments that look like reasoning
+        if len(text.strip()) < 50:
+            # Common reasoning words that appear in fragments
+            reasoning_words = [
+                "search", "click", "try", "look", "let", "now", "use", 
+                "browser", "query", "button", "results", "samsung", 
+                "galaxy", "genai", "cases", "latest", "phones"
+            ]
+            
+            # If more than 30% of words are reasoning-related, filter it
+            words = text_lower.split()
+            if len(words) > 0:
+                reasoning_word_count = sum(1 for word in words if any(rw in word for rw in reasoning_words))
+                if reasoning_word_count / len(words) > 0.3:
+                    return True
+                    
+        return False
+    
+    def _is_small_reasoning_fragment(self, text):
+        """
+        Check if a small text fragment is likely part of reasoning content.
+        This catches very small fragments that might be part of reasoning.
+        
+        Args:
+            text: Small text fragment to check
+            
+        Returns:
+            bool: True if fragment appears to be reasoning
+        """
+        if not text or len(text.strip()) < 3:
+            return False
+        
+        text_lower = text.lower().strip()
+        
+        # Very specific small fragments that are clearly reasoning
+        small_reasoning_fragments = [
+            "you search for", "the latest", "use the browser", "click the",
+            "search query", "search button", "genai use cases", "samsung phones",
+            "galaxy phones", "browser to look", "help me provide", "take a screenshot",
+            "better visualize", "comprehensive summary", "informative search",
+            "search results", "now let", "let me", "i'll", "try another"
+        ]
+        
+        # Check for exact matches of small reasoning fragments
+        for fragment in small_reasoning_fragments:
+            if fragment == text_lower or fragment in text_lower:
+                return True
+        
+        # If text is very short and contains reasoning keywords, filter it
+        if len(text.strip()) < 30:
+            reasoning_keywords = ["search", "click", "browser", "samsung", "galaxy", "genai", "latest", "cases"]
+            keyword_count = sum(1 for keyword in reasoning_keywords if keyword in text_lower)
+            if keyword_count >= 2:
+                return True
+        
+        return False
+    
+    def _handle_text_streaming(self, kwargs):
+        """
+        Extract and display streaming text from various event formats.
+        Filter out reasoning content aggressively.
+        
+        Args:
+            kwargs: Event data from the agent
+        """
+        text_chunk = None
+        
+        # Extract text from content_block_delta format
+        if "content_block_delta" in kwargs:
+            delta = kwargs["content_block_delta"]
+            if "delta" in delta and "text" in delta["delta"]:
+                text_chunk = delta["delta"]["text"]
+        
+        # Extract text from data format
+        elif "data" in kwargs:
+            data = kwargs["data"]
+            if isinstance(data, str):
+                text_chunk = data
+            elif isinstance(data, dict) and "delta" in data:
+                delta = data["delta"]
+                if isinstance(delta, dict) and "text" in delta:
+                    text_chunk = delta["text"]
+        
+        # Extract text from delta format (direct delta events)
+        elif "delta" in kwargs:
+            delta = kwargs["delta"]
+            if isinstance(delta, dict) and "text" in delta:
+                text_chunk = delta["text"]
+        
+        # Only add text if it's not reasoning content and we're not in thinking mode
+        if text_chunk and not self.is_thinking:
+            # Apply more aggressive filtering - even for small fragments
+            if not self._is_reasoning_text(text_chunk) and not self._is_small_reasoning_fragment(text_chunk):
+                self.message_container += text_chunk
+                self._update_ui_if_needed()
+    
+    def _handle_tool_events(self, kwargs):
+        """
+        Handle tool use and tool result events.
+        
+        Args:
+            kwargs: Event data from the agent
+        """
+        # Force update any accumulated text first
+        if any(k in kwargs for k in ["tool_use", "tool_result", "content_block_start"]):
+            if self.message_container:
+                self.placeholder.markdown(self.message_container)
+            
+            # Handle tool use
+            if "tool_use" in kwargs:
+                self._handle_tool_use(kwargs["tool_use"])
+            
+            # Handle tool results
+            if "tool_result" in kwargs:
+                self._handle_tool_result(kwargs["tool_result"])
     
     def _handle_initialization(self):
         """Reset state and show thinking indicator."""
@@ -360,55 +573,59 @@ class StreamlitHandler:
                 <p style="color: var(--text-color, currentColor);"><em>End of thinking process</em></p>
                 """, unsafe_allow_html=True)
     
-    def _handle_text_streaming(self, kwargs):
+    def _filter_reasoning_patterns(self, text):
         """
-        Extract and display streaming text from various event formats.
+        Filter out common reasoning patterns from text chunks.
         
         Args:
-            kwargs: Event data from the agent
+            text: Text chunk to filter
+            
+        Returns:
+            str: Filtered text with reasoning patterns removed
         """
-        text_chunk = None
+        if not text:
+            return text
         
-        # Extract text from content_block_delta format
-        if "content_block_delta" in kwargs:
-            delta = kwargs["content_block_delta"]
-            if "delta" in delta and "text" in delta["delta"]:
-                text_chunk = delta["delta"]["text"]
+        import re
         
-        # Extract text from data format
-        elif "data" in kwargs:
-            data = kwargs["data"]
-            if isinstance(data, str):
-                text_chunk = data
-            elif isinstance(data, dict) and "delta" in data:
-                delta = data["delta"]
-                if isinstance(delta, dict) and "text" in delta:
-                    text_chunk = delta["text"]
+        # Common reasoning patterns that should be filtered out
+        reasoning_patterns = [
+            r"I'll use the browser tool to search for.*?(?=\.|$)",
+            r"I'll search for.*?(?=\.|$)",
+            r"Let me search for.*?(?=\.|$)",
+            r"Let me try.*?(?=\.|$)",
+            r"I need to.*?(?=\.|$)",
+            r"First, I'll.*?(?=\.|$)",
+            r"Now I'll.*?(?=\.|$)",
+            r"I should.*?(?=\.|$)",
+            r"Let me check.*?(?=\.|$)",
+            r"I'm going to.*?(?=\.|$)",
+            r"Based on the search results.*?Let me.*?(?=\.|$)",
+            r"I'm receiving large responses.*?Let me.*?(?=\.|$)",
+            r"Now let me.*?(?=\.|$)",
+            r"Let me click.*?(?=\.|$)",
+            r"I'll click.*?(?=\.|$)",
+            r"Let me now take.*?(?=\.|$)",
+            r"Now, let me look at.*?(?=\.|$)",
+            r"Let me look at one of.*?(?=\.|$)",
+        ]
         
-        # Update UI if we found text
-        if text_chunk:
-            self.message_container += text_chunk
-            self._update_ui_if_needed()
+        filtered_text = text
+        
+        # Remove reasoning patterns
+        for pattern in reasoning_patterns:
+            filtered_text = re.sub(pattern, "", filtered_text, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Clean up extra whitespace
+        filtered_text = re.sub(r'\s+', ' ', filtered_text).strip()
+        
+        # If the entire text was reasoning, return empty string
+        if not filtered_text or len(filtered_text) < 10:
+            return ""
+        
+        return filtered_text
     
-    def _handle_tool_events(self, kwargs):
-        """
-        Handle tool use and tool result events.
-        
-        Args:
-            kwargs: Event data from the agent
-        """
-        # Force update any accumulated text first
-        if any(k in kwargs for k in ["tool_use", "tool_result", "content_block_start"]):
-            if self.message_container:
-                self.placeholder.markdown(self.message_container)
-            
-            # Handle tool use
-            if "tool_use" in kwargs:
-                self._handle_tool_use(kwargs["tool_use"])
-            
-            # Handle tool results
-            if "tool_result" in kwargs:
-                self._handle_tool_result(kwargs["tool_result"])
+
     
     def _handle_tool_use(self, tool_use):
         """
@@ -472,5 +689,107 @@ class StreamlitHandler:
         """Update the UI if enough time has passed since the last update."""
         current_time = time.time()
         if current_time - self.last_update_time > self.update_interval:
-            self.placeholder.markdown(self.message_container)
+            # Apply final filtering to the entire message container before display
+            filtered_content = self._apply_final_content_filter(self.message_container)
+            self.placeholder.markdown(filtered_content)
             self.last_update_time = current_time
+    
+    def _apply_final_content_filter(self, content):
+        """
+        Apply final aggressive filtering to the entire content before display.
+        This catches reasoning patterns that may have been assembled from fragments.
+        
+        Args:
+            content: Complete content to filter
+            
+        Returns:
+            str: Filtered content with reasoning removed
+        """
+        if not content:
+            return content
+        
+        import re
+        
+        # Split content into sentences and filter each one
+        sentences = re.split(r'[.!?]+', content)
+        filtered_sentences = []
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # Check if this sentence is reasoning content
+            if not self._is_reasoning_sentence(sentence):
+                filtered_sentences.append(sentence)
+        
+        # Rejoin sentences
+        filtered_content = '. '.join(filtered_sentences)
+        
+        # Clean up any remaining reasoning patterns
+        filtered_content = self._filter_reasoning_patterns(filtered_content)
+        
+        # If we filtered out everything, return a placeholder
+        if not filtered_content.strip():
+            return ""
+        
+        return filtered_content
+    
+    def _is_reasoning_sentence(self, sentence):
+        """
+        Check if a complete sentence is reasoning content.
+        
+        Args:
+            sentence: Sentence to check
+            
+        Returns:
+            bool: True if sentence appears to be reasoning
+        """
+        if not sentence or len(sentence.strip()) < 5:
+            return False
+        
+        sentence_lower = sentence.lower().strip()
+        
+        # Reasoning sentence patterns
+        reasoning_sentence_patterns = [
+            r"i'll help you search",
+            r"let me use the browser",
+            r"i'll use the browser",
+            r"now let me type",
+            r"let me click",
+            r"i'll click",
+            r"let me search",
+            r"i'll search",
+            r"let me try",
+            r"let me look at",
+            r"now, let me look",
+            r"let me now take",
+            r"based on the search results",
+            r"i'm receiving large responses",
+            r"query about.*cases for the latest.*samsung",
+            r"search.*genai.*samsung",
+            r"browser to look",
+            r"help me provide.*comprehensive",
+            r"better visualize.*content",
+        ]
+        
+        # Check for reasoning patterns
+        for pattern in reasoning_sentence_patterns:
+            if re.search(pattern, sentence_lower):
+                return True
+        
+        # Check for fragmented reasoning indicators
+        reasoning_fragments = [
+            "search for", "use the browser", "click the", "look at one of",
+            "try another", "now let", "let me", "i'll", "based on",
+            "search query", "search button", "informative search",
+            "comprehensive summary", "better visualize", "take a screenshot"
+        ]
+        
+        # If sentence is short and contains multiple reasoning fragments, filter it
+        if len(sentence) < 100:
+            fragment_count = sum(1 for fragment in reasoning_fragments if fragment in sentence_lower)
+            if fragment_count >= 2:
+                return True
+        
+        return False

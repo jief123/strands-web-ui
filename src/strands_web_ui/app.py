@@ -21,8 +21,12 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 
 from strands_web_ui.mcp_server_manager import MCPServerManager
 from strands_web_ui.handlers.streamlit_handler import StreamlitHandler
+from strands_web_ui.handlers.clean_response_handler import CleanResponseHandler
+from strands_web_ui.handlers.enhanced_streamlit_handler import create_enhanced_handler
 from strands_web_ui.utils.config_loader import load_config, load_mcp_config
 from strands_web_ui.utils.tool_loader import load_tools_from_config, get_available_tool_names
+from strands_web_ui.utils import SessionStateManager
+from strands_web_ui.action_history import ActionHistoryDisplay
 
 # Simple no-op handler for non-streaming mode
 class NoOpHandler:
@@ -156,6 +160,45 @@ def initialize_agent(config, mcp_manager=None):
         callback_handler=None  # Will be set per interaction
     )
 
+def _filter_reasoning_from_response(response_text):
+    """
+    Filter out reasoning/thinking patterns from response text.
+    
+    Args:
+        response_text: Raw response text that may contain reasoning
+        
+    Returns:
+        str: Filtered response text with reasoning content removed
+    """
+    if not response_text:
+        return response_text
+    
+    # Common reasoning patterns to filter out
+    reasoning_patterns = [
+        r"I'll search for.*?:",
+        r"Let me search for.*?:",
+        r"Let me try.*?:",
+        r"I need to.*?:",
+        r"First, I'll.*?:",
+        r"Now I'll.*?:",
+        r"I should.*?:",
+        r"Let me check.*?:",
+        r"I'm going to.*?:",
+    ]
+    
+    import re
+    filtered_text = response_text
+    
+    # Remove reasoning patterns
+    for pattern in reasoning_patterns:
+        filtered_text = re.sub(pattern, "", filtered_text, flags=re.IGNORECASE)
+    
+    # Clean up extra whitespace and newlines
+    filtered_text = re.sub(r'\n\s*\n', '\n\n', filtered_text)
+    filtered_text = filtered_text.strip()
+    
+    return filtered_text
+
 def extract_response_text(response):
     """
     Extract text from the agent's response object.
@@ -268,6 +311,13 @@ def main():
         
     if "thinking_history" not in st.session_state:
         st.session_state.thinking_history = []
+    
+    # Initialize action history session state management
+    SessionStateManager.initialize_session_state()
+    
+    # Check if we need to start a new conversation (e.g., if messages were cleared)
+    if SessionStateManager.is_new_conversation_needed():
+        SessionStateManager.start_new_conversation()
     
     # Use session state config for UI controls
     config = st.session_state.config
@@ -456,6 +506,74 @@ def main():
                     for tool in server_tools:
                         tool_name = getattr(tool, "__name__", str(tool))
                         st.write(f"- {tool_name} ({server_id})")
+        
+        st.divider()
+        
+        # Conversation & Action History Management
+        st.header("🔧 Action History")
+        st.markdown("""
+        <small>📖 View all agent actions, tool usage, and reasoning in real-time. 
+        <a href="#" onclick="alert('Action History shows every tool the agent uses, its reasoning process, and performance metrics. Use the controls below to customize the display.')">Learn more</a></small>
+        """, unsafe_allow_html=True)
+        
+        # Initialize action history display if not exists
+        if "action_history_display" not in st.session_state:
+            st.session_state.action_history_display = ActionHistoryDisplay()
+        
+        # Get current session summary for header info
+        session_summary = SessionStateManager.get_session_summary()
+        total_actions = session_summary.get("total_actions", 0)
+        current_turn = session_summary.get("current_turn", 0)
+        
+        # Show conversation status with helpful tooltips
+        if total_actions > 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Turn", current_turn, help="Current conversation turn - each user message starts a new turn")
+            with col2:
+                st.metric("Actions", total_actions, help="Total number of actions captured (tool usage + reasoning events)")
+        else:
+            st.info("💡 Actions will appear here as the agent works. Try asking the agent to calculate something or read a file!")
+        
+        # Render the action history display in the sidebar
+        action_display = st.session_state.action_history_display
+        action_display.render_action_history()
+        
+        st.divider()
+        
+        # Conversation Management Controls
+        st.header("Conversation Controls")
+        
+        # Clear conversation button
+        if st.button("🗑️ Clear Chat History", help="Clear all messages and action history"):
+            # Clear main chat messages
+            st.session_state.messages = []
+            st.session_state.thinking_history = []
+            
+            # Clear action history using session state manager
+            SessionStateManager.start_new_conversation()
+            
+            st.success("Chat history cleared!")
+            st.rerun()
+        
+        # Show detailed session info if there are actions
+        if total_actions > 0:
+            with st.expander("📊 Session Details", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Tool Uses", session_summary.get("tool_uses", 0))
+                    st.metric("Reasoning Events", session_summary.get("reasoning_events", 0))
+                with col2:
+                    st.metric("Completed Tools", session_summary.get("completed_tools", 0))
+                    avg_duration = session_summary.get("avg_tool_duration", 0)
+                    st.metric("Avg Duration", f"{avg_duration:.2f}s")
+                
+                # Show tool sources breakdown
+                tool_sources = session_summary.get("tool_sources", {})
+                if tool_sources:
+                    st.write("**Tool Sources:**")
+                    for source, count in tool_sources.items():
+                        st.write(f"- {source}: {count}")
     
     # Display conversation history with thinking processes
     for i, message in enumerate(st.session_state.messages):
@@ -597,6 +715,9 @@ def main():
             response_placeholder = st.empty()
             
             try:
+                # Start a new turn for action history tracking
+                SessionStateManager.increment_turn()
+                
                 # Step 1: Process audio if attached
                 if has_audio_attachment and AUDIO_TRANSCRIPTION_AVAILABLE:
                     # Show transcription progress
@@ -704,32 +825,28 @@ Audio Transcription (Language: {detected_language}):
                 agent = st.session_state.agent
                 
                 if streaming_enabled:
-                    # Streaming mode (existing behavior)
+                    # Streaming mode with enhanced handler that includes action capture
                     ui_config = st.session_state.config.get("ui", {})
                     update_interval = ui_config.get("update_interval", 0.1)
                     
-                    stream_handler = StreamlitHandler(
+                    # Use the enhanced handler that combines CleanResponseHandler with action capture
+                    # It provides thinking display, streaming, and comprehensive action history tracking
+                    enhanced_handler = create_enhanced_handler(
                         placeholder=response_placeholder,
-                        update_interval=update_interval
+                        update_interval=update_interval,
+                        use_clean_handler=True
                     )
                     
-                    agent.callback_handler = stream_handler
+                    # Start a new turn for action tracking
+                    enhanced_handler.start_new_turn()
                     
-                    # Process with streaming
+                    agent.callback_handler = enhanced_handler
+                    
+                    # Process with enhanced handler
                     response = agent(final_input)
-                    response_text = extract_response_text(response)
                     
-                    # Handle streaming response display
-                    if not stream_handler.message_container:
-                        response_placeholder.markdown(response_text)
-                    else:
-                        response_placeholder.markdown(stream_handler.message_container)
-                    
-                    # Make sure thinking content is preserved after the response
-                    if stream_handler.thinking_container and not stream_handler.thinking_preserved:
-                        stream_handler._preserve_thinking_content()
-                    
-                    final_response_text = response_text or stream_handler.message_container
+                    # The enhanced handler manages its own display and action capture
+                    final_response_text = enhanced_handler.final_response or extract_response_text(response)
                     
                 else:
                     # Non-streaming mode
